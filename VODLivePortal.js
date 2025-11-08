@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         VOD & Live Portal
-// @version      1.1.9
+// @version      1.2.2
 // @description  Fetches Movies, Series, and Live TV from an Xtream Codes portal
 // @author       Dex
 // ==/UserScript==
@@ -25,7 +25,8 @@ WidgetMetadata = {
                         { title: "Burner (Recommended)", value: "http://burner25699.cdn-24.me" },
                         { title: "P13 (Recommended)", value: "http://p13.live" },
                         { title: "Ultra (Recommended)", value: "http://ultra.gotop.me:8080" },
-                        { title: "Lot (Recommended)", value: "http://lot77162.cdngold.me" }
+                        { title: "Lot (Recommended)", value: "http://lot77162.cdngold.me" },
+                        { title: "Enter Custom Portal...", value: "" } 
                     ]
                 },
                 {
@@ -58,7 +59,8 @@ WidgetMetadata = {
                     type: "input",
                     description: "e.g., 'Action' or 'مسلسلات عربية'",
                     placeholders: [
-                        { title: "All", value: "" },
+                        { title: "All", value: "" }, 
+                        { title: "Type Custom Category...", value: "" }, 
                         // --- Updated Categories ---
                         { title: "مسلسلات عربية فائقة الوضوح", value: "مسلسلات عربية فائقة الوضوح" },
                         { title: "مسلسلات شاهد فائقة الوضوح", value: "مسلسلات شاهد فائقة الوضوح" },
@@ -80,11 +82,11 @@ WidgetMetadata = {
                         { title: "مسرحيات مصرية", value: "مسرحيات مصرية" },
                         { title: "مسرحيات خليجية", value: "مسرحيات خليجية" },
                         { title: "أفلام انمي", value: "أفلام انمي" },
-                        { title: "افلام تركية مترجمة", value: "افلام تركية مترجمة" },
+                        { title: "افلام تركية مترجمة", value: "افلام تركية مترجمة" }, 
                         { title: "أفلام اطفال مدبلجة", value: "أفلام اطفال مدبلجة" },
                         { title: "أفلام اطفال مترجمة", value: "أفلام اطفال مترجمة" },
                         { title: "أفلام أطفال فائقة الوضوح", value: "أفلام أطفال فائقة الوضوح" },
-                        { title: "افلام دريد لحام", value: "افلام دريد لحام" }
+                        { title: "افلام دريد لحام", value: "افلام دريد لحam" }
                     ]
                 },
                 {
@@ -99,10 +101,23 @@ WidgetMetadata = {
                         },
                     ]
                 },
+                {
+                    name: "sort_by",
+                    title: "Sort By",
+                    type: "enumeration",
+                    description: "Choose the sort order for the results",
+                    value: "default",
+                    enumOptions: [
+                        { title: "Default (API Order)", value: "default" },
+                        { title: "Name (A-Z)", value: "az" },
+                        { title: "Name (Z-A)", value: "za" },
+                        { title: "Newest Added (Movies/Series)", value: "newest" }
+                    ]
+                }
             ],
         },
     ],
-    version: "1.1.9",
+    version: "1.2.2", // <-- UPDATED VERSION
     requiredVersion: "0.0.1",
     description: "Loads Movies, Series, & Live TV from an Xtream Codes VOD portal.",
     author: "Dex"
@@ -132,6 +147,7 @@ async function loadVodItems(params = {}) {
         const type = params.type || "movies";
         const categoryFilter = params.category_filter || "";
         const nameFilter = params.name_filter || "";
+        const sortBy = params.sort_by || "default"; 
 
         if (!portal || !username || !password) {
             throw new Error("Portal URL, Username, and Password are required.");
@@ -176,20 +192,40 @@ async function loadVodItems(params = {}) {
         // Apply filters
         const filteredItems = items.filter(item => {
             
-            // --- START OF FIX ---
-            // Removed the complex try/catch regex logic and replaced it with
-            // a simple, case-insensitive 'includes' check.
-            
             const groupMatch = !categoryFilter || 
                 (item.metadata?.group?.toLowerCase() || '').includes(categoryFilter.toLowerCase());
 
             const nameMatch = !nameFilter || 
                 (item.title?.toLowerCase() || '').includes(nameFilter.toLowerCase());
             
-            // --- END OF FIX ---
-
             return groupMatch && nameMatch;
         });
+
+        // --- START OF SORTING LOGIC (v1.2.0 - More Robust) ---
+        if (sortBy === 'az') {
+            filteredItems.sort((a, b) => 
+                (a.title || '').localeCompare(b.title || '')
+            );
+        } else if (sortBy === 'za') {
+            filteredItems.sort((a, b) => 
+                (b.title || '').localeCompare(a.title || '')
+            );
+        } else if (sortBy === 'newest') {
+            const getTimestamp = (item) => {
+                let ts = 0;
+                if (type === 'movies') {
+                    ts = item.metadata?.added;
+                } else if (type === 'series') {
+                    ts = item.metadata?.last_modified;
+                }
+                // Ensure it's a number. Handles null, undefined, and string numbers.
+                return parseInt(ts, 10) || 0; 
+            };
+            
+            // Sort descending (newest first)
+            filteredItems.sort((a, b) => getTimestamp(b) - getTimestamp(a));
+        }
+        // --- END OF SORTING LOGIC ---
 
         return filteredItems;
 
@@ -351,19 +387,19 @@ async function loadDetail(link) {
             const episodeItemsList = []; 
             let firstEpisodeUrl = null;
 
-            // --- FIXED EPISODE PROCESSING (v1.1.9) ---
+            // --- FIXED EPISODE PROCESSING (v1.2.1) ---
             /**
              * Process a single episode with SAFE episode numbering
-             * Uses counter-based approach when API data is unreliable
+             * Uses a per-season counter
              */
-            const addEpisode = (ep, seasonNum) => {
+            const addEpisode = (ep, seasonNum, safeEpisodeCounter) => { 
                 const extension = ep.container_extension || 'mp4';
                 const epLink = `${portal}/series/${username}/${password}/${ep.id}.${extension}`;
                 
                 const sNum = ep.season || seasonNum || 1;
                 
-                // Get the counter-based episode number (always safe)
-                const safeEpisodeNum = episodeItemsList.length + 1;
+                // Get the counter-based episode number (from the loop)
+                const safeEpisodeNum = safeEpisodeCounter; 
                 
                 // Try to get episode number from API
                 let apiEpisodeNum = ep.episode_num;
@@ -382,16 +418,10 @@ async function loadDetail(link) {
                 // Choose which episode number to use
                 const finalEpisodeNum = isApiNumValid ? apiEpisodeNum : safeEpisodeNum;
                 
-                // Build the title
-                let epTitle = ep.title;
-                
-                // Check if title is bad (missing or looks like an ID)
-                const isTitleBad = !epTitle || /^\d{6,}$/.test(epTitle);
-                
-                if (isTitleBad) {
-                    // Generate safe title using the final episode number
-                    epTitle = `S${String(sNum).padStart(2, '0')}E${String(finalEpisodeNum).padStart(2, '0')}`;
-                }
+                // --- START OF CHANGE (v1.2.2) ---
+                // Always use S/E format per user request, ignoring ep.title
+                const epTitle = `S${String(sNum).padStart(2, '0')}E${String(finalEpisodeNum).padStart(2, '0')}`;
+                // --- END OF CHANGE (v1.2.2) ---
 
                 if (!firstEpisodeUrl) {
                     firstEpisodeUrl = epLink;
@@ -412,8 +442,16 @@ async function loadDetail(link) {
 
             // Parse episodes (handles both flat array and season-grouped object)
             if (Array.isArray(episodesData)) {
+                let currentSeason = -1;
+                let perSeasonCounter = 1;
                 for (const ep of episodesData) {
-                    addEpisode(ep, ep.season);
+                    const sNum = ep.season || 1;
+                    if (sNum !== currentSeason) { // Check if season has changed
+                        currentSeason = sNum;
+                        perSeasonCounter = 1; // Reset counter
+                    }
+                    addEpisode(ep, sNum, perSeasonCounter);
+                    perSeasonCounter++;
                 }
             } else if (typeof episodesData === 'object' && episodesData !== null) {
                 for (const seasonNum in episodesData) {
@@ -422,8 +460,10 @@ async function loadDetail(link) {
                     const seasonEpisodes = episodesData[seasonNum];
                     
                     if (Array.isArray(seasonEpisodes)) {
+                        let perSeasonCounter = 1; // Counter resets for each new season
                         for (const ep of seasonEpisodes) {
-                            addEpisode(ep, seasonNum);
+                            addEpisode(ep, seasonNum, perSeasonCounter);
+                            perSeasonCounter++;
                         }
                     }
                 }
