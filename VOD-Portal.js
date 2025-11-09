@@ -6,7 +6,7 @@
 // ==/UserScript==
 
 // --- Item limit for performance ---
-const ITEM_LIMIT = 50;
+const ITEM_LIMIT = 200;
 
 WidgetMetadata = {
     id: "vod_portal",
