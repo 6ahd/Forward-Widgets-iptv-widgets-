@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Unified Live TV Player
+// @name         Live tv portal
 // @version      3.0.0
 // @description  Loads Live TV from an M3U URL or an Xtream Codes player_api
 // @author       Dex
@@ -7,11 +7,11 @@
 
 WidgetMetadata = {
     id: "unified_live_portal_v3",
-    title: "Unified Live TV Player",
+    title: "Live tv portal", // --- NAME CHANGED ---
     detailCacheDuration: 3600, 
     modules: [
         {
-            title: "Live TV",
+            title: "Live tv portal", // --- NAME CHANGED ---
             requiresWebView: false,
             functionName: "loadLiveItems", // Renamed function
             cacheDuration: 21600, 
